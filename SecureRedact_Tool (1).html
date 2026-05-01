@@ -1,0 +1,1452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureRedact — Private Document Redaction</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0E0E10;
+    --surface: #16161A;
+    --surface2: #1E1E24;
+    --border: #2A2A32;
+    --border2: #36363F;
+    --text: #F0F0F5;
+    --muted: #7070820;
+    --muted2: #707082;
+    --accent: #E8C547;
+    --accent2: #C4A030;
+    --danger: #E05454;
+    --success: #4CAF7D;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: -0.3px;
+  }
+
+  .logo-icon {
+    width: 30px; height: 30px;
+    background: var(--accent);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    color: #000;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .logo span { color: var(--accent); }
+
+  .privacy-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: rgba(76, 175, 125, 0.1);
+    border: 1px solid rgba(76, 175, 125, 0.3);
+    border-radius: 20px;
+    font-size: 11px;
+    color: var(--success);
+    font-family: var(--mono);
+    letter-spacing: 0.5px;
+  }
+
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+
+  /* ── Layout ── */
+  .app {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    height: calc(100vh - 57px);
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 16px;
+    gap: 16px;
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--muted2);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 1.5px dashed var(--border2);
+    border-radius: 10px;
+    padding: 24px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface2);
+  }
+
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(232,197,71,0.05);
+  }
+
+  .upload-icon {
+    width: 40px; height: 40px;
+    margin: 0 auto 10px;
+    background: var(--surface);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+
+  .upload-zone p { font-size: 13px; color: var(--muted2); line-height: 1.5; }
+  .upload-zone strong { color: var(--text); display: block; margin-bottom: 4px; font-size: 13px; }
+
+  .file-types {
+    margin-top: 10px;
+    display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;
+  }
+
+  .file-tag {
+    padding: 2px 8px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--muted2);
+  }
+
+  /* Tool group */
+  .tool-group { display: flex; flex-direction: column; gap: 6px; }
+
+  .tool-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: left;
+    width: 100%;
+  }
+
+  .tool-btn:hover { background: var(--border); border-color: var(--border2); }
+  .tool-btn.active { background: rgba(232,197,71,0.12); border-color: var(--accent); color: var(--accent); }
+  .tool-btn .tb-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+  .tool-btn .tb-label { flex: 1; }
+  .tool-btn .tb-shortcut { font-family: var(--mono); font-size: 10px; color: var(--muted2); }
+
+  /* Action buttons */
+  .action-btn {
+    width: 100%;
+    padding: 11px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: var(--sans);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: none;
+    display: flex; align-items: center; gap: 8px; justify-content: center;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted2);
+    border: 1px solid var(--border);
+  }
+
+  .btn-ghost:hover { background: var(--surface2); color: var(--text); border-color: var(--border2); }
+  .btn-danger { background: rgba(224,84,84,0.12); color: var(--danger); border: 1px solid rgba(224,84,84,0.3); }
+  .btn-danger:hover { background: rgba(224,84,84,0.2); }
+
+  /* Stats */
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .stat-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    text-align: center;
+  }
+
+  .stat-val { font-size: 20px; font-weight: 600; font-family: var(--mono); color: var(--accent); }
+  .stat-label { font-size: 10px; color: var(--muted2); margin-top: 2px; }
+
+  /* Page navigator */
+  .page-nav { display: flex; align-items: center; gap: 8px; }
+  .page-nav input[type=number] {
+    width: 52px;
+    padding: 6px 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .page-nav button {
+    padding: 6px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted2);
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+
+  .page-nav button:hover { color: var(--text); border-color: var(--border2); }
+  .page-count { font-size: 12px; color: var(--muted2); font-family: var(--mono); white-space: nowrap; }
+
+  /* Privacy note */
+  .privacy-note {
+    background: rgba(76,175,125,0.08);
+    border: 1px solid rgba(76,175,125,0.2);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 11px;
+    color: rgba(76,175,125,0.9);
+    line-height: 1.6;
+  }
+
+  /* ── Canvas area ── */
+  .canvas-area {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #0A0A0C;
+  }
+
+  .canvas-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .toolbar-sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+
+  .color-swatch {
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    border: 2px solid var(--border2);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .color-swatch.selected { border-color: var(--accent); }
+
+  .zoom-btn {
+    padding: 4px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    font-family: var(--mono);
+    transition: all 0.15s;
+  }
+
+  .zoom-btn:hover { border-color: var(--border2); }
+  .zoom-level { font-size: 12px; font-family: var(--mono); color: var(--muted2); min-width: 36px; text-align: center; }
+
+  .canvas-scroll {
+    flex: 1;
+    overflow: auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .canvas-wrapper {
+    position: relative;
+    display: inline-block;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 8px 40px rgba(0,0,0,0.5);
+    cursor: crosshair;
+    user-select: none;
+  }
+
+  .canvas-wrapper.mode-text { cursor: text; }
+  .canvas-wrapper.mode-pan { cursor: grab; }
+
+  #docCanvas { display: block; }
+  #redactCanvas {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+  }
+
+  #interactCanvas {
+    position: absolute;
+    top: 0; left: 0;
+  }
+
+  /* Drop overlay */
+  .drop-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(232,197,71,0.08);
+    border: 3px dashed var(--accent);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .drop-overlay.active { display: flex; }
+
+  /* Empty state */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+    color: var(--muted2);
+    text-align: center;
+    padding: 40px;
+  }
+
+  .empty-icon { font-size: 56px; opacity: 0.3; }
+  .empty-state h2 { font-size: 18px; color: var(--text); opacity: 0.5; font-weight: 400; }
+  .empty-state p { font-size: 13px; max-width: 280px; line-height: 1.7; }
+
+  /* Redaction list */
+  .redaction-list { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; }
+
+  .redaction-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--muted2);
+  }
+
+  .redaction-item:hover { border-color: var(--border2); }
+
+  .redact-color-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+  .redact-del {
+    background: none;
+    border: none;
+    color: var(--danger);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 2px;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+  }
+
+  .redact-del:hover { opacity: 1; }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    padding: 12px 18px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text);
+    z-index: 300;
+    transform: translateY(80px);
+    opacity: 0;
+    transition: all 0.25s;
+    max-width: 300px;
+  }
+
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { border-color: rgba(76,175,125,0.5); color: var(--success); }
+  .toast.error { border-color: rgba(224,84,84,0.5); color: var(--danger); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  input[type=file] { display: none; }
+
+  .divider { height: 1px; background: var(--border); }
+
+  .mode-info {
+    display: flex; align-items: center; gap: 6px; margin-left: auto;
+    font-size: 11px; font-family: var(--mono); color: var(--muted2);
+  }
+
+  .mode-info span { color: var(--accent); }
+
+  /* ── Search & Redact ── */
+  .search-redact-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .search-input-row {
+    display: flex;
+    gap: 6px;
+  }
+
+  .search-input {
+    flex: 1;
+    padding: 8px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--muted2); }
+
+  .search-btn {
+    padding: 7px 11px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    color: var(--muted2);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .search-btn:hover { background: var(--border); color: var(--text); }
+
+  .search-options {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .search-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--muted2);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .search-checkbox input[type=checkbox] {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .search-results-info {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--muted2);
+    min-height: 16px;
+  }
+
+  .search-results-info.found { color: var(--accent); }
+  .search-results-info.none  { color: var(--danger); }
+
+  .search-matches-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+
+  .match-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--muted2);
+    gap: 6px;
+  }
+
+  .match-item .match-page { color: var(--accent); flex-shrink: 0; }
+  .match-item .match-ctx  { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .btn-redact-all {
+    width: 100%;
+    padding: 9px 14px;
+    background: rgba(224,84,84,0.15);
+    border: 1px solid rgba(224,84,84,0.4);
+    border-radius: 7px;
+    color: var(--danger);
+    font-size: 12px;
+    font-family: var(--sans);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .btn-redact-all:hover { background: rgba(224,84,84,0.28); }
+  .btn-redact-all:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .highlight-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="drop-overlay" id="dropOverlay">Drop file to open</div>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">R</div>
+    Secure<span>Redact</span>
+  </div>
+  <div class="privacy-badge">
+    <div class="dot"></div>
+    100% client-side · nothing leaves your device
+  </div>
+</header>
+
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- Upload -->
+    <div>
+      <div class="section-label">Document</div>
+      <div class="upload-zone" id="uploadZone">
+        <div class="upload-icon">📄</div>
+        <strong>Click or drag to open</strong>
+        <p>No file is uploaded anywhere. Everything stays in your browser.</p>
+        <div class="file-types">
+          <span class="file-tag">PDF</span>
+          <span class="file-tag">JPG</span>
+          <span class="file-tag">PNG</span>
+          <span class="file-tag">WEBP</span>
+        </div>
+      </div>
+      <input type="file" id="fileInput" accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp">
+    </div>
+
+    <!-- Tools -->
+    <div>
+      <div class="section-label">Redaction Tool</div>
+      <div class="tool-group">
+        <button class="tool-btn active" data-tool="redact" onclick="setTool('redact')">
+          <span class="tb-icon">◼</span>
+          <span class="tb-label">Black Redaction</span>
+          <span class="tb-shortcut">B</span>
+        </button>
+        <button class="tool-btn" data-tool="white" onclick="setTool('white')">
+          <span class="tb-icon">◻</span>
+          <span class="tb-label">White Redaction</span>
+          <span class="tb-shortcut">W</span>
+        </button>
+        <button class="tool-btn" data-tool="blur" onclick="setTool('blur')">
+          <span class="tb-icon">▦</span>
+          <span class="tb-label">Pattern Block</span>
+          <span class="tb-shortcut">P</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Pages (PDF only) -->
+    <div id="pageSection" style="display:none">
+      <div class="section-label">Page</div>
+      <div class="page-nav">
+        <button onclick="changePage(-1)">‹</button>
+        <input type="number" id="pageNum" value="1" min="1" onchange="gotoPage(this.value)">
+        <button onclick="changePage(1)">›</button>
+        <span class="page-count" id="pageCount">/ 1</span>
+      </div>
+    </div>
+
+    <!-- Search & Redact -->
+    <div>
+      <div class="section-label">🔍 Search &amp; Redact</div>
+      <div class="search-redact-box">
+        <div class="search-input-row">
+          <input class="search-input" id="searchInput" type="text" placeholder="Type word or phrase…" autocomplete="off" spellcheck="false">
+          <button class="search-btn" id="searchBtn" onclick="runSearch()">Find</button>
+        </div>
+        <div class="search-options">
+          <label class="search-checkbox">
+            <input type="checkbox" id="searchCaseSensitive"> Case sensitive
+          </label>
+          <label class="search-checkbox">
+            <input type="checkbox" id="searchWholeWord"> Whole word
+          </label>
+        </div>
+        <div class="search-results-info" id="searchResultsInfo"></div>
+        <div class="search-matches-list" id="searchMatchesList"></div>
+        <button class="btn-redact-all" id="redactAllBtn" onclick="redactAllMatches()" disabled>◼ Redact All Matches</button>
+      </div>
+    </div>
+
+    <!-- Redaction list -->
+    <div>
+      <div class="section-label">Redactions <span id="redactCountBadge" style="color:var(--accent);"></span></div>
+      <div class="redaction-list" id="redactionList">
+        <div style="font-size:12px;color:var(--muted2);padding:8px;text-align:center;">None yet. Draw on the document.</div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div>
+      <div class="section-label">Session</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-val" id="statRedactions">0</div>
+          <div class="stat-label">Redactions</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="statPages">—</div>
+          <div class="stat-label">Pages</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Actions -->
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button class="action-btn btn-primary" id="downloadBtn" onclick="downloadRedacted()" disabled>
+        ⬇ Download Redacted File
+      </button>
+      <button class="action-btn btn-ghost" onclick="undoLast()">
+        ↩ Undo Last
+      </button>
+      <button class="action-btn btn-danger" onclick="clearAll()">
+        ✕ Clear All Redactions
+      </button>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Privacy note -->
+    <div class="privacy-note">
+      🔒 <strong>Fully private.</strong> Your document is never uploaded, never sent to any server, and never saved. All processing happens inside your browser. Close the tab = everything gone.
+    </div>
+
+  </div>
+
+  <!-- CANVAS AREA -->
+  <div class="canvas-area">
+
+    <div class="canvas-toolbar">
+      <button class="zoom-btn" onclick="changeZoom(-0.1)">−</button>
+      <span class="zoom-level" id="zoomLabel">100%</span>
+      <button class="zoom-btn" onclick="changeZoom(0.1)">+</button>
+      <button class="zoom-btn" onclick="fitZoom()">Fit</button>
+      <div class="toolbar-sep"></div>
+      <span style="font-size:11px;color:var(--muted2);font-family:var(--mono);">Fill:</span>
+      <div class="color-swatch selected" style="background:#000;" onclick="setFill('#000000')" title="Black" id="swatch-black"></div>
+      <div class="color-swatch" style="background:#fff;border-color:#555;" onclick="setFill('#ffffff')" title="White" id="swatch-white"></div>
+      <div class="color-swatch" style="background:#1a1a2e;" onclick="setFill('#1a1a2e')" title="Dark Navy" id="swatch-navy"></div>
+      <div class="color-swatch" style="background:#E8C547;" onclick="setFill('#E8C547')" title="Highlight" id="swatch-amber"></div>
+      <div class="toolbar-sep"></div>
+      <div class="mode-info">Mode: <span id="modeLabel">Redact</span></div>
+    </div>
+
+    <div class="canvas-scroll" id="canvasScroll">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🔒</div>
+        <h2>Open a document to begin</h2>
+        <p>PDF or image files. Nothing is sent anywhere — all processing stays inside your browser tab.</p>
+      </div>
+      <div class="canvas-wrapper" id="canvasWrapper" style="display:none;">
+        <canvas id="docCanvas"></canvas>
+        <canvas id="redactCanvas"></canvas>
+        <canvas id="highlightCanvas" class="highlight-canvas"></canvas>
+        <canvas id="interactCanvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const state = {
+  file: null,
+  fileType: null,
+  pdfDoc: null,
+  currentPage: 1,
+  totalPages: 1,
+  zoom: 1,
+  tool: 'redact',
+  fillColor: '#000000',
+  redactions: {},
+  drawing: false,
+  startX: 0, startY: 0,
+  currentRect: null,
+  baseImageData: null,
+};
+
+const docCanvas = document.getElementById('docCanvas');
+const redactCanvas = document.getElementById('redactCanvas');
+const highlightCanvas = document.getElementById('highlightCanvas');
+const interactCanvas = document.getElementById('interactCanvas');
+const docCtx = docCanvas.getContext('2d');
+const redactCtx = redactCanvas.getContext('2d');
+const highlightCtx = highlightCanvas.getContext('2d');
+const interactCtx = interactCanvas.getContext('2d');
+
+function pageKey() { return `p${state.currentPage}`; }
+function getRedactions() { return state.redactions[pageKey()] || []; }
+function setRedactions(arr) { state.redactions[pageKey()] = arr; }
+
+// ── File Loading ─────────────────────────────────────────────────────────────
+document.getElementById('uploadZone').addEventListener('click', () => document.getElementById('fileInput').click());
+document.getElementById('fileInput').addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+['dragenter','dragover'].forEach(ev => {
+  document.body.addEventListener(ev, e => { e.preventDefault(); document.getElementById('dropOverlay').classList.add('active'); });
+});
+['dragleave','drop'].forEach(ev => {
+  document.body.addEventListener(ev, e => { e.preventDefault(); document.getElementById('dropOverlay').classList.remove('active'); });
+});
+document.body.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+
+async function loadFile(file) {
+  state.file = file;
+  const ext = file.name.split('.').pop().toLowerCase();
+  state.fileType = ext === 'pdf' ? 'pdf' : 'image';
+  state.redactions = {};
+
+  if (state.fileType === 'pdf') {
+    const buf = await file.arrayBuffer();
+    state.pdfDoc = await pdfjsLib.getDocument({ data: buf }).promise;
+    state.totalPages = state.pdfDoc.numPages;
+    state.currentPage = 1;
+    document.getElementById('pageSection').style.display = 'block';
+    document.getElementById('pageCount').textContent = `/ ${state.totalPages}`;
+    document.getElementById('pageNum').max = state.totalPages;
+    document.getElementById('statPages').textContent = state.totalPages;
+    await renderPage(1);
+  } else {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      state.img = img;
+      state.totalPages = 1;
+      document.getElementById('pageSection').style.display = 'none';
+      document.getElementById('statPages').textContent = 1;
+      renderImage();
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  }
+
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('canvasWrapper').style.display = 'inline-block';
+  document.getElementById('downloadBtn').disabled = false;
+  fitZoom();
+}
+
+async function renderPage(pageNum) {
+  const page = await state.pdfDoc.getPage(pageNum);
+  const scale = state.zoom * window.devicePixelRatio;
+  const viewport = page.getViewport({ scale: state.zoom });
+  const vpHD = page.getViewport({ scale });
+
+  const W = viewport.width, H = viewport.height;
+  setCanvasSize(W, H);
+
+  docCtx.clearRect(0, 0, W, H);
+  docCtx.fillStyle = '#fff';
+  docCtx.fillRect(0, 0, W, H);
+
+  const offscreen = document.createElement('canvas');
+  offscreen.width = vpHD.width; offscreen.height = vpHD.height;
+  const offCtx = offscreen.getContext('2d');
+
+  await page.render({ canvasContext: offCtx, viewport: vpHD }).promise;
+  docCtx.drawImage(offscreen, 0, 0, W, H);
+
+  drawAllRedactions();
+  document.getElementById('pageNum').value = pageNum;
+
+  // Redraw search highlights for this page
+  drawSearchHighlights();
+}
+
+function renderImage() {
+  const img = state.img;
+  const W = img.width * state.zoom, H = img.height * state.zoom;
+  setCanvasSize(W, H);
+  docCtx.clearRect(0, 0, W, H);
+  docCtx.drawImage(img, 0, 0, W, H);
+  drawAllRedactions();
+}
+
+function setCanvasSize(W, H) {
+  const w = Math.round(W), h = Math.round(H);
+  [docCanvas, redactCanvas, highlightCanvas, interactCanvas].forEach(c => { c.width = w; c.height = h; });
+  document.getElementById('canvasWrapper').style.width = w + 'px';
+  document.getElementById('canvasWrapper').style.height = h + 'px';
+}
+
+function rerender() {
+  if (!state.file) return;
+  if (state.fileType === 'pdf') renderPage(state.currentPage);
+  else renderImage();
+}
+
+// ── Zoom ─────────────────────────────────────────────────────────────────────
+function changeZoom(delta) {
+  state.zoom = Math.max(0.2, Math.min(4, parseFloat((state.zoom + delta).toFixed(1))));
+  document.getElementById('zoomLabel').textContent = Math.round(state.zoom * 100) + '%';
+  rerender();
+}
+
+function fitZoom() {
+  const scroll = document.getElementById('canvasScroll');
+  const aw = scroll.clientWidth - 48, ah = scroll.clientHeight - 48;
+  let dw, dh;
+  if (state.fileType === 'pdf' && state.pdfDoc) {
+    state.pdfDoc.getPage(state.currentPage).then(p => {
+      const vp = p.getViewport({ scale: 1 });
+      state.zoom = Math.min(aw / vp.width, ah / vp.height, 1.5);
+      document.getElementById('zoomLabel').textContent = Math.round(state.zoom * 100) + '%';
+      rerender();
+    });
+  } else if (state.img) {
+    state.zoom = Math.min(aw / state.img.width, ah / state.img.height, 1.5);
+    document.getElementById('zoomLabel').textContent = Math.round(state.zoom * 100) + '%';
+    rerender();
+  }
+}
+
+// ── Pages ─────────────────────────────────────────────────────────────────────
+function changePage(d) {
+  const np = state.currentPage + d;
+  if (np >= 1 && np <= state.totalPages) { state.currentPage = np; renderPage(np); }
+}
+
+function gotoPage(v) {
+  const np = Math.max(1, Math.min(state.totalPages, parseInt(v)));
+  state.currentPage = np;
+  renderPage(np);
+}
+
+// ── Tools ─────────────────────────────────────────────────────────────────────
+function setTool(t) {
+  state.tool = t;
+  document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  document.getElementById('modeLabel').textContent = { redact: 'Redact', white: 'Redact', blur: 'Pattern' }[t];
+}
+
+function setFill(color) {
+  state.fillColor = color;
+  document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+  const map = { '#000000': 'swatch-black', '#ffffff': 'swatch-white', '#1a1a2e': 'swatch-navy', '#E8C547': 'swatch-amber' };
+  if (map[color]) document.getElementById(map[color]).classList.add('selected');
+}
+
+// ── Drawing ───────────────────────────────────────────────────────────────────
+function getCanvasPos(e) {
+  const rect = interactCanvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * (interactCanvas.width / rect.width),
+    y: (e.clientY - rect.top) * (interactCanvas.height / rect.height)
+  };
+}
+
+interactCanvas.addEventListener('mousedown', e => {
+  if (!state.file) return;
+  const pos = getCanvasPos(e);
+  state.drawing = true;
+  state.startX = pos.x; state.startY = pos.y;
+  state.currentRect = null;
+});
+
+interactCanvas.addEventListener('mousemove', e => {
+  if (!state.drawing) return;
+  const pos = getCanvasPos(e);
+  const x = Math.min(state.startX, pos.x), y = Math.min(state.startY, pos.y);
+  const w = Math.abs(pos.x - state.startX), h = Math.abs(pos.y - state.startY);
+  interactCtx.clearRect(0, 0, interactCanvas.width, interactCanvas.height);
+  interactCtx.strokeStyle = '#E8C547';
+  interactCtx.lineWidth = 1.5;
+  interactCtx.setLineDash([4, 3]);
+  interactCtx.strokeRect(x, y, w, h);
+  interactCtx.setLineDash([]);
+  interactCtx.fillStyle = 'rgba(232,197,71,0.08)';
+  interactCtx.fillRect(x, y, w, h);
+});
+
+interactCanvas.addEventListener('mouseup', e => {
+  if (!state.drawing) return;
+  state.drawing = false;
+  interactCtx.clearRect(0, 0, interactCanvas.width, interactCanvas.height);
+  const pos = getCanvasPos(e);
+  const x = Math.min(state.startX, pos.x), y = Math.min(state.startY, pos.y);
+  const w = Math.abs(pos.x - state.startX), h = Math.abs(pos.y - state.startY);
+  if (w < 3 || h < 3) return;
+
+  const id = Date.now();
+  const redactions = getRedactions();
+  redactions.push({ id, x, y, w, h, color: state.fillColor, tool: state.tool });
+  setRedactions(redactions);
+  drawAllRedactions();
+  updateRedactionList();
+  updateStats();
+});
+
+// Touch support
+interactCanvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  interactCanvas.dispatchEvent(new MouseEvent('mousedown', { clientX: touch.clientX, clientY: touch.clientY }));
+});
+interactCanvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  interactCanvas.dispatchEvent(new MouseEvent('mousemove', { clientX: touch.clientX, clientY: touch.clientY }));
+});
+interactCanvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  const touch = e.changedTouches[0];
+  interactCanvas.dispatchEvent(new MouseEvent('mouseup', { clientX: touch.clientX, clientY: touch.clientY }));
+});
+
+// ── Redaction Drawing ─────────────────────────────────────────────────────────
+function drawAllRedactions() {
+  redactCtx.clearRect(0, 0, redactCanvas.width, redactCanvas.height);
+  getRedactions().forEach(r => drawSingleRedaction(redactCtx, r));
+}
+
+function drawSingleRedaction(ctx, r) {
+  if (r.tool === 'blur') {
+    ctx.fillStyle = r.color;
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    const blockSize = 8;
+    for (let bx = r.x; bx < r.x + r.w; bx += blockSize) {
+      for (let by = r.y; by < r.y + r.h; by += blockSize) {
+        ctx.fillStyle = (Math.floor((bx + by) / blockSize) % 2 === 0) ? '#111' : '#2a2a2a';
+        ctx.fillRect(bx, by, Math.min(blockSize, r.x + r.w - bx), Math.min(blockSize, r.y + r.h - by));
+      }
+    }
+  } else {
+    ctx.fillStyle = r.color;
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+  }
+}
+
+// ── UI Updates ─────────────────────────────────────────────────────────────────
+function updateRedactionList() {
+  const list = document.getElementById('redactionList');
+  const redactions = getRedactions();
+  document.getElementById('redactCountBadge').textContent = redactions.length ? `(${redactions.length})` : '';
+
+  if (!redactions.length) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--muted2);padding:8px;text-align:center;">None yet. Draw on the document.</div>';
+    return;
+  }
+  list.innerHTML = redactions.map((r, i) => `
+    <div class="redaction-item">
+      <div class="redact-color-dot" style="background:${r.color};border:1px solid ${r.color === '#ffffff' ? '#555' : 'transparent'}"></div>
+      <span style="flex:1;margin-left:6px;">Area ${i + 1} — ${Math.round(r.w)}×${Math.round(r.h)}px</span>
+      <button class="redact-del" onclick="removeRedaction(${r.id})">×</button>
+    </div>
+  `).join('');
+}
+
+function updateStats() {
+  const total = Object.values(state.redactions).reduce((s, arr) => s + arr.length, 0);
+  document.getElementById('statRedactions').textContent = total;
+}
+
+function removeRedaction(id) {
+  setRedactions(getRedactions().filter(r => r.id !== id));
+  drawAllRedactions();
+  updateRedactionList();
+  updateStats();
+}
+
+function undoLast() {
+  const redactions = getRedactions();
+  if (!redactions.length) { showToast('Nothing to undo', 'error'); return; }
+  redactions.pop();
+  setRedactions(redactions);
+  drawAllRedactions();
+  updateRedactionList();
+  updateStats();
+  showToast('Undone');
+}
+
+function clearAll() {
+  if (!getRedactions().length) return;
+  state.redactions[pageKey()] = [];
+  drawAllRedactions();
+  updateRedactionList();
+  updateStats();
+  showToast('All redactions cleared');
+}
+
+// ── Download ──────────────────────────────────────────────────────────────────
+async function downloadRedacted() {
+  if (!state.file) return;
+
+  showToast('Preparing download…');
+
+  try {
+    if (state.fileType === 'pdf') {
+      const { jsPDF } = window.jspdf;
+      let pdf = null;
+
+      for (let p = 1; p <= state.totalPages; p++) {
+        const page = await state.pdfDoc.getPage(p);
+        const vp = page.getViewport({ scale: 2 });
+        const oc = document.createElement('canvas');
+        oc.width = vp.width; oc.height = vp.height;
+        const octx = oc.getContext('2d');
+        octx.fillStyle = '#fff';
+        octx.fillRect(0, 0, vp.width, vp.height);
+        await page.render({ canvasContext: octx, viewport: vp }).promise;
+
+        const redacts = state.redactions[`p${p}`] || [];
+        const vpNorm = page.getViewport({ scale: 1 });
+        const scaleX = vp.width / vpNorm.width * (1 / state.zoom);
+        const scaleY = vp.height / vpNorm.height * (1 / state.zoom);
+
+        redacts.forEach(r => {
+          const rx = r.x * scaleX, ry = r.y * scaleY;
+          const rw = r.w * scaleX, rh = r.h * scaleY;
+          if (r.tool === 'blur') {
+            const bs = 16;
+            for (let bx = rx; bx < rx + rw; bx += bs) {
+              for (let by = ry; by < ry + rh; by += bs) {
+                octx.fillStyle = (Math.floor((bx + by) / bs) % 2 === 0) ? '#111' : '#2a2a2a';
+                octx.fillRect(bx, by, Math.min(bs, rx + rw - bx), Math.min(bs, ry + rh - by));
+              }
+            }
+          } else {
+            octx.fillStyle = r.color;
+            octx.fillRect(rx, ry, rw, rh);
+          }
+        });
+
+        const imgData = oc.toDataURL('image/jpeg', 0.92);
+        const w = vpNorm.width * 0.75, h = vpNorm.height * 0.75;
+
+        if (!pdf) {
+          pdf = new jsPDF({ orientation: w > h ? 'l' : 'p', unit: 'pt', format: [w, h] });
+        } else {
+          pdf.addPage([w, h], w > h ? 'l' : 'p');
+        }
+
+        pdf.addImage(imgData, 'JPEG', 0, 0, w, h);
+      }
+
+      const name = state.file.name.replace(/\.pdf$/i, '') + '_redacted.pdf';
+      pdf.save(name);
+    } else {
+      const oc = document.createElement('canvas');
+      oc.width = state.img.width; oc.height = state.img.height;
+      const octx = oc.getContext('2d');
+      octx.drawImage(state.img, 0, 0);
+
+      const scaleX = state.img.width / docCanvas.width;
+      const scaleY = state.img.height / docCanvas.height;
+
+      (getRedactions()).forEach(r => {
+        const rx = r.x * scaleX, ry = r.y * scaleY;
+        const rw = r.w * scaleX, rh = r.h * scaleY;
+        if (r.tool === 'blur') {
+          const bs = 10;
+          for (let bx = rx; bx < rx + rw; bx += bs) {
+            for (let by = ry; by < ry + rh; by += bs) {
+              octx.fillStyle = (Math.floor((bx + by) / bs) % 2 === 0) ? '#111' : '#2a2a2a';
+              octx.fillRect(bx, by, Math.min(bs, rx + rw - bx), Math.min(bs, ry + rh - by));
+            }
+          }
+        } else {
+          octx.fillStyle = r.color;
+          octx.fillRect(rx, ry, rw, rh);
+        }
+      });
+
+      const ext = state.file.name.split('.').pop().toLowerCase();
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+      const dataUrl = oc.toDataURL(mime, 0.95);
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = state.file.name.replace(/\.[^.]+$/, '') + '_redacted.' + ext;
+      a.click();
+    }
+
+    showToast('Downloaded successfully', 'success');
+  } catch (err) {
+    console.error(err);
+    showToast('Download failed: ' + err.message, 'error');
+  }
+}
+
+// ── Search & Redact ───────────────────────────────────────────────────────────
+const searchState = {
+  matches: [],   // [{page, x, y, w, h, context}]
+  query: '',
+};
+
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runSearch();
+});
+
+async function runSearch() {
+  const query = document.getElementById('searchInput').value.trim();
+  if (!query) { showToast('Enter a search term', 'error'); return; }
+  if (!state.file) { showToast('Open a document first', 'error'); return; }
+  if (state.fileType !== 'pdf') { showToast('Search works on PDF files only', 'error'); return; }
+
+  const caseSensitive = document.getElementById('searchCaseSensitive').checked;
+  const wholeWord = document.getElementById('searchWholeWord').checked;
+
+  searchState.query = query;
+  searchState.matches = [];
+
+  const infoEl = document.getElementById('searchResultsInfo');
+  infoEl.textContent = 'Searching…';
+  infoEl.className = 'search-results-info';
+  document.getElementById('searchMatchesList').innerHTML = '';
+  document.getElementById('redactAllBtn').disabled = true;
+
+  try {
+    for (let p = 1; p <= state.totalPages; p++) {
+      const page = await state.pdfDoc.getPage(p);
+      const vp = page.getViewport({ scale: state.zoom });
+      const textContent = await page.getTextContent();
+
+      // Build full page text with item index mapping
+      for (const item of textContent.items) {
+        if (!item.str) continue;
+        const str = item.str;
+        const testStr = caseSensitive ? str : str.toLowerCase();
+        const testQuery = caseSensitive ? query : query.toLowerCase();
+
+        let idx = 0;
+        while (true) {
+          let pos = testStr.indexOf(testQuery, idx);
+          if (pos === -1) break;
+
+          // Whole word check
+          if (wholeWord) {
+            const before = pos > 0 ? testStr[pos - 1] : ' ';
+            const after = pos + testQuery.length < testStr.length ? testStr[pos + testQuery.length] : ' ';
+            if (/\w/.test(before) || /\w/.test(after)) { idx = pos + 1; continue; }
+          }
+
+          // Get bounding box from transform + width
+          // PDF text items have: transform [scaleX,0,0,scaleY,tx,ty], width, height
+          const [sx,, , sy, tx, ty] = item.transform;
+          const charWidth = item.width / (str.length || 1);
+          const matchWidth = charWidth * query.length;
+
+          // Convert PDF coords to canvas coords
+          const pdfX = tx + pos * charWidth;
+          const pdfY = ty;
+          const pdfH = Math.abs(sy) * 1.2;
+
+          // Use page viewport to transform
+          const [cx, cy] = applyViewport(vp, pdfX, pdfY);
+          const [cxEnd] = applyViewport(vp, pdfX + matchWidth, pdfY);
+          const [, cyTop] = applyViewport(vp, pdfX, pdfY + Math.abs(sy));
+
+          const canvasX = Math.min(cx, cxEnd);
+          const canvasY = Math.min(cy, cyTop) - 2;
+          const canvasW = Math.abs(cxEnd - cx);
+          const canvasH = Math.abs(cy - cyTop) + 4;
+
+          const context = str.substring(Math.max(0, pos - 10), pos + query.length + 10).replace(/\n/g, ' ');
+
+          searchState.matches.push({
+            page: p,
+            x: canvasX, y: canvasY,
+            w: canvasW, h: canvasH,
+            context,
+          });
+
+          idx = pos + testQuery.length;
+        }
+      }
+    }
+
+    const count = searchState.matches.length;
+    if (count === 0) {
+      infoEl.textContent = 'No matches found.';
+      infoEl.className = 'search-results-info none';
+    } else {
+      infoEl.textContent = `${count} match${count !== 1 ? 'es' : ''} across ${new Set(searchState.matches.map(m=>m.page)).size} page(s)`;
+      infoEl.className = 'search-results-info found';
+      renderSearchMatchList();
+      document.getElementById('redactAllBtn').disabled = false;
+      drawSearchHighlights();
+    }
+  } catch(err) {
+    console.error(err);
+    infoEl.textContent = 'Search error: ' + err.message;
+    infoEl.className = 'search-results-info none';
+  }
+}
+
+function applyViewport(vp, pdfX, pdfY) {
+  // PDF.js viewport transform: [scale,0,0,-scale,offsetX,offsetY]
+  const x = vp.transform[0] * pdfX + vp.transform[4];
+  const y = vp.transform[3] * pdfY + vp.transform[5];
+  return [x, y];
+}
+
+function renderSearchMatchList() {
+  const list = document.getElementById('searchMatchesList');
+  list.innerHTML = searchState.matches.slice(0, 30).map((m, i) => `
+    <div class="match-item" onclick="jumpToMatch(${i})" style="cursor:pointer" title="Click to go to page ${m.page}">
+      <span class="match-page">p.${m.page}</span>
+      <span class="match-ctx">…${escHtml(m.context)}…</span>
+    </div>
+  `).join('') + (searchState.matches.length > 30 ? `<div class="match-item" style="justify-content:center;color:var(--muted2);">+${searchState.matches.length - 30} more</div>` : '');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function jumpToMatch(idx) {
+  const m = searchState.matches[idx];
+  if (!m) return;
+  if (state.currentPage !== m.page) {
+    state.currentPage = m.page;
+    renderPage(m.page).then(() => drawSearchHighlights());
+  } else {
+    drawSearchHighlights();
+  }
+}
+
+function drawSearchHighlights() {
+  if (highlightCanvas.width === 0) return;
+  highlightCtx.clearRect(0, 0, highlightCanvas.width, highlightCanvas.height);
+  searchState.matches
+    .filter(m => m.page === state.currentPage)
+    .forEach(m => {
+      highlightCtx.fillStyle = 'rgba(232,197,71,0.35)';
+      highlightCtx.strokeStyle = 'rgba(232,197,71,0.9)';
+      highlightCtx.lineWidth = 1.5;
+      highlightCtx.fillRect(m.x, m.y, m.w, m.h);
+      highlightCtx.strokeRect(m.x, m.y, m.w, m.h);
+    });
+}
+
+function clearSearchHighlights() {
+  highlightCtx.clearRect(0, 0, highlightCanvas.width, highlightCanvas.height);
+}
+
+async function redactAllMatches() {
+  if (!searchState.matches.length) return;
+
+  const confirmCount = searchState.matches.length;
+  if (!confirm(`Redact all ${confirmCount} match(es) of "${searchState.query}" across all pages?`)) return;
+
+  // Group matches by page
+  const byPage = {};
+  searchState.matches.forEach(m => {
+    if (!byPage[m.page]) byPage[m.page] = [];
+    byPage[m.page].push(m);
+  });
+
+  // For each page with matches, we need viewport to recalculate coords at current zoom
+  // We stored canvas coords at the time of search (with current zoom), so we add redactions directly
+  let totalAdded = 0;
+  for (const [pageStr, matches] of Object.entries(byPage)) {
+    const p = parseInt(pageStr);
+    // If zoom has changed since search, we need to re-scale
+    // Re-fetch page to get fresh viewport
+    const page = await state.pdfDoc.getPage(p);
+    const vp = page.getViewport({ scale: state.zoom });
+    const textContent = await page.getTextContent();
+
+    // Re-compute positions at current zoom for this page
+    const pageRedacts = state.redactions[`p${p}`] || [];
+    const query = searchState.query;
+    const caseSensitive = document.getElementById('searchCaseSensitive').checked;
+    const wholeWord = document.getElementById('searchWholeWord').checked;
+
+    for (const item of textContent.items) {
+      if (!item.str) continue;
+      const str = item.str;
+      const testStr = caseSensitive ? str : str.toLowerCase();
+      const testQuery = caseSensitive ? query : query.toLowerCase();
+      let idx = 0;
+      while (true) {
+        let pos = testStr.indexOf(testQuery, idx);
+        if (pos === -1) break;
+        if (wholeWord) {
+          const before = pos > 0 ? testStr[pos-1] : ' ';
+          const after = pos + testQuery.length < testStr.length ? testStr[pos+testQuery.length] : ' ';
+          if (/\w/.test(before) || /\w/.test(after)) { idx = pos+1; continue; }
+        }
+        const [sx,, , sy, tx, ty] = item.transform;
+        const charWidth = item.width / (str.length || 1);
+        const matchWidth = charWidth * query.length;
+        const pdfX = tx + pos * charWidth;
+        const pdfY = ty;
+        const [cx, cy] = applyViewport(vp, pdfX, pdfY);
+        const [cxEnd] = applyViewport(vp, pdfX + matchWidth, pdfY);
+        const [, cyTop] = applyViewport(vp, pdfX, pdfY + Math.abs(sy));
+        const canvasX = Math.min(cx, cxEnd);
+        const canvasY = Math.min(cy, cyTop) - 2;
+        const canvasW = Math.abs(cxEnd - cx);
+        const canvasH = Math.abs(cy - cyTop) + 4;
+        pageRedacts.push({ id: Date.now() + Math.random(), x: canvasX, y: canvasY, w: canvasW, h: canvasH, color: state.fillColor, tool: state.tool });
+        totalAdded++;
+        idx = pos + testQuery.length;
+      }
+    }
+    state.redactions[`p${p}`] = pageRedacts;
+  }
+
+  // Clear search UI
+  searchState.matches = [];
+  document.getElementById('searchResultsInfo').textContent = '';
+  document.getElementById('searchMatchesList').innerHTML = '';
+  document.getElementById('redactAllBtn').disabled = true;
+  clearSearchHighlights();
+
+  // Re-render current page
+  drawAllRedactions();
+  updateRedactionList();
+  updateStats();
+  showToast(`✓ Redacted ${totalAdded} match${totalAdded !== 1 ? 'es' : ''} across all pages`, 'success');
+}
+
+// Clear highlights when page changes
+const _origRenderPage = renderPage;
+// Patch rerender to clear highlights and re-draw them
+const _origRerender = rerender;
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'b' || e.key === 'B') setTool('redact');
+  if (e.key === 'w' || e.key === 'W') setTool('white');
+  if (e.key === 'p' || e.key === 'P') setTool('blur');
+  if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoLast(); }
+  if (e.key === '+' || e.key === '=') changeZoom(0.1);
+  if (e.key === '-') changeZoom(-0.1);
+  if (e.key === 'ArrowLeft') changePage(-1);
+  if (e.key === 'ArrowRight') changePage(1);
+});
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = 'toast'; }, 2800);
+}
+</script>
+</body>
+</html>
